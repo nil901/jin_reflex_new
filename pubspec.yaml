@@ -76,6 +76,8 @@ flutter:
     - assets/foot-chart.html
     - assets/button.json
     - assets/right_foot.json
+    - assets/right_hand_btn.json
+    - assets/left_hand_btn.json
 
   # An image asset can refer to one or more resolution-specific "variants", see
   # https://flutter.dev/to/resolution-aware-images

@@ -1,7 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:jin_reflex_new/screens/Diagnosis/left_foot_screen.dart';
 import 'package:jin_reflex_new/screens/left_foot_screen.dart';
+import 'package:jin_reflex_new/screens/left_hand_sc.dart';
+import 'package:jin_reflex_new/screens/right_hand_sc.dart';
 import 'package:jin_reflex_new/screens/right_screen.dart';
+import 'dart:convert';
+import 'package:flutter/services.dart' show rootBundle;
+import 'package:jin_reflex_new/api_service/prefs/app_preference.dart';
 
 class DiagnosisScreen extends StatefulWidget {
   const DiagnosisScreen({
@@ -23,12 +28,51 @@ class _DiagnosisScreenState extends State<DiagnosisScreen> {
   final TextEditingController matchedProblem = TextEditingController();
   final TextEditingController notDetected = TextEditingController();
 
+  // diagnosis status flags
+  bool lfSaved = false;
+  bool rfSaved = false;
+  bool lhSaved = false;
+  bool rhSaved = false;
+
   final List<String> diagnosisOptions = [
     "Diagnose Left Foot",
     "Diagnose Right Foot",
     "Diagnose Left Hand",
     "Diagnose Right Hand",
   ];
+
+  @override
+  void initState() {
+    super.initState();
+    loadSavedStatus();
+  }
+
+  void loadSavedStatus() {
+    setState(() {
+      lfSaved = AppPreference().getBool(
+        "LF_SAVED_${widget.diagnosis_id}_${widget.patient_id}",
+      );
+      rfSaved = AppPreference().getBool(
+        "RF_SAVED_${widget.diagnosis_id}_${widget.patient_id}",
+      );
+      lhSaved = AppPreference().getBool(
+        "LH_SAVED_${widget.diagnosis_id}_${widget.patient_id}",
+      );
+      rhSaved = AppPreference().getBool(
+        "RH_SAVED_${widget.diagnosis_id}_${widget.patient_id}",
+      );
+    });
+  }
+
+  // dynamically get border
+  Color _borderColor(String option) {
+    if (option == "Diagnose Left Foot" && lfSaved) return Colors.green;
+    if (option == "Diagnose Right Foot" && rfSaved) return Colors.green;
+    if (option == "Diagnose Left Hand" && lhSaved) return Colors.green;
+    if (option == "Diagnose Right Hand" && rhSaved) return Colors.green;
+
+    return const Color(0xffF9CF63);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -63,17 +107,17 @@ class _DiagnosisScreenState extends State<DiagnosisScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    "Patient ID : ${widget.name}",
-                    style: TextStyle(
+                    "Patient ID : ${widget.patient_id}",
+                    style: const TextStyle(
                       fontWeight: FontWeight.bold,
                       fontSize: 15,
                       color: Colors.black,
                     ),
                   ),
-                  SizedBox(height: 4),
+                  const SizedBox(height: 4),
                   Text(
                     "Patient Name : ${widget.name}",
-                    style: TextStyle(color: Colors.black87, fontSize: 14),
+                    style: const TextStyle(color: Colors.black87, fontSize: 14),
                   ),
                 ],
               ),
@@ -111,7 +155,7 @@ class _DiagnosisScreenState extends State<DiagnosisScreen> {
                 decoration: BoxDecoration(
                   color: Colors.white,
                   borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: const Color(0xffF9CF63), width: 2),
+                  border: Border.all(color: _borderColor(option), width: 2),
                 ),
                 child: ListTile(
                   title: Center(
@@ -124,7 +168,7 @@ class _DiagnosisScreenState extends State<DiagnosisScreen> {
                     ),
                   ),
                   onTap: () {
-                    print(option);
+                    // Navigation with response
                     if (option == "Diagnose Left Foot") {
                       Navigator.push(
                         context,
@@ -135,7 +179,9 @@ class _DiagnosisScreenState extends State<DiagnosisScreen> {
                                 diagnosisId: widget.diagnosis_id,
                               ),
                         ),
-                      );
+                      ).then((_) {
+                        loadSavedStatus();
+                      });
                     } else if (option == "Diagnose Right Foot") {
                       Navigator.push(
                         context,
@@ -146,13 +192,46 @@ class _DiagnosisScreenState extends State<DiagnosisScreen> {
                                 diagnosisId: widget.diagnosis_id,
                               ),
                         ),
+                      ).then((_) {
+                        loadSavedStatus();
+                      });
+                    } else if (option == "Diagnose Right Hand") {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder:
+                              (context) => RightHandScreen(
+                                pid: widget.patient_id,
+                                diagnosisId: widget.diagnosis_id,
+                              ),
+                        ),
+                      ).then((_) {
+                        loadSavedStatus();
+                      });
+                    } else if (option == "Diagnose Left Hand") {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder:
+                              (context) => LeftHandScreen(
+                                pid: widget.patient_id,
+                                diagnosisId: widget.diagnosis_id,
+                              ),
+                        ),
+                      ).then((_) {
+                        loadSavedStatus();
+                      });
+                    } else {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text("Coming Soon")),
                       );
-                    } else {}
+                    }
                   },
                 ),
               );
             }),
-            SizedBox(height: 10),
+            const SizedBox(height: 10),
+
             Container(
               padding: const EdgeInsets.all(14),
               decoration: BoxDecoration(
@@ -230,7 +309,8 @@ class _DiagnosisScreenState extends State<DiagnosisScreen> {
             _button("Cancel", Colors.black87, () {
               Navigator.pop(context);
             }),
-            _button("Submit", Colors.green, () {
+            _button("Submit", Colors.green, () async {
+              await _printSavedDiagnosisData();
               ScaffoldMessenger.of(context).showSnackBar(
                 const SnackBar(
                   content: Text("Diagnosis Submitted Successfully"),
@@ -281,5 +361,123 @@ class _DiagnosisScreenState extends State<DiagnosisScreen> {
         ),
       ),
     );
+  }
+
+  // ---------------------------------------
+  // PRINT SAVED DIAGNOSIS DATA
+  // ---------------------------------------
+  Future<void> _printSavedDiagnosisData() async {
+    // mapping of part -> (assetPath, jsonListKey, prefKeyPrefix, label)
+    final parts = [
+      {
+        'label': 'LF',
+        'asset': 'assets/button.json',
+        'listKey': 'buttons',
+        'pref': 'LF_DATA_${widget.diagnosis_id}_${widget.patient_id}',
+      },
+      {
+        'label': 'RF',
+        'asset': 'assets/right_foot.json',
+        'listKey': 'RightFoot',
+        'pref': 'RF_DATA_${widget.diagnosis_id}_${widget.patient_id}',
+      },
+      {
+        'label': 'LH',
+        'asset': 'assets/left_hand_btn.json',
+        'listKey': 'LeftHand',
+        'pref': 'LH_DATA_${widget.diagnosis_id}_${widget.patient_id}',
+      },
+      {
+        'label': 'RH',
+        'asset': 'assets/right_hand_btn.json',
+        'listKey': 'RightHand',
+        'pref': 'RH_DATA_${widget.diagnosis_id}_${widget.patient_id}',
+      },
+    ];
+
+    for (var part in parts) {
+      final label = part['label'] as String;
+      final asset = part['asset'] as String;
+      final listKey = part['listKey'] as String;
+      final prefKey = part['pref'] as String;
+
+      // Load asset once to map index -> id (for lookup)
+      Map<String, dynamic> idMap = {};
+      try {
+        final jsonStr = await rootBundle.loadString(asset);
+        final Map<String, dynamic> jsonMap = jsonDecode(jsonStr);
+        final List<dynamic> arr = jsonMap[listKey] as List<dynamic>;
+        for (var item in arr) {
+          try {
+            final idx = item['index'].toString();
+            idMap[idx] = item; // keep whole item (id,x,y,etc)
+          } catch (e) {
+            // ignore item parse errors
+          }
+        }
+      } catch (e) {
+        // asset load failed - continue, we'll still try pref values
+      }
+
+      final saved = AppPreference().getString(prefKey);
+
+      if (saved.isEmpty) {
+        // no saved local data; print a notice
+        print('$label: No local saved data found for key $prefKey');
+        continue;
+      }
+
+      Map<String, dynamic> decoded;
+      try {
+        decoded = jsonDecode(saved) as Map<String, dynamic>;
+      } catch (e) {
+        print('$label: Saved data for $prefKey is not valid JSON');
+        continue;
+      }
+
+      // Iterate sorted by index for readability
+      final keys =
+          decoded.keys.toList()
+            ..sort((a, b) => int.parse(a).compareTo(int.parse(b)));
+
+      for (var idx in keys) {
+        final val = decoded[idx] as String;
+        final parts = val.split(',');
+        final x = parts.isNotEmpty ? parts[0] : '';
+        final y = parts.length > 1 ? parts[1] : '';
+        final state = parts.length > 2 ? parts[2] : '';
+
+        final idItem = idMap[idx];
+        final id =
+            (idItem != null && idItem['id'] != null)
+                ? idItem['id'].toString()
+                : 'IDX_$idx';
+
+        // compute server mapping: state 2 -> 1, state 0 -> -1, state 1 -> 0
+        int? stateInt;
+        try {
+          stateInt = int.parse(state);
+        } catch (e) {
+          stateInt = null;
+        }
+
+        int? serverVal;
+        if (stateInt == 2)
+          serverVal = 1;
+        else if (stateInt == 0)
+          serverVal = -1;
+        else if (stateInt == 1)
+          serverVal = 0;
+        else
+          serverVal = null;
+
+        final serverStr = serverVal != null ? serverVal.toString() : '';
+
+        // Print in requested format with server mapping
+        print(
+          '$label: ID=$id, Index=$idx, X=$x, Y=$y, State=$state, ServerVal=$serverStr',
+        );
+      }
+    }
   }
 }

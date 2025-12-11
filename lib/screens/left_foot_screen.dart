@@ -16,7 +16,6 @@ class PointData {
   final int index;
   final String group;
 
-  /// UI STATES:
   /// 0 = white
   /// 1 = red
   /// 2 = green
@@ -52,10 +51,7 @@ class LeftFootScreenNew extends StatefulWidget {
   final String diagnosisId;
   final String pid;
 
-  const LeftFootScreenNew({
-    required this.diagnosisId,
-    required this.pid,
-  });
+  const LeftFootScreenNew({required this.diagnosisId, required this.pid});
 
   @override
   _LeftFootScreenNewState createState() => _LeftFootScreenNewState();
@@ -85,39 +81,51 @@ class _LeftFootScreenNewState extends State<LeftFootScreenNew> {
       final List<dynamic> jsonList = jsonMap["buttons"];
       points = jsonList.map((p) => PointData.fromJson(p)).toList();
 
-      loadSavedLocalStates();
+      loadSavedLocal();
 
-      await fetchServerStates(); // Server map apply
+      await fetchServerStates();
 
       setState(() => isLoading = false);
-
     } catch (e) {
       print("JSON ERROR: $e");
     }
   }
 
-  // Load saved points from SharedPreferences
-  void loadSavedLocalStates() {
-    for (var p in points) {
-      String saved = AppPreference().getString("LF_${p.index}");
+  // ---------------------------------------------------
+  // LOAD FROM SINGLE JSON STRING (FAST)
+  // ---------------------------------------------------
+  void loadSavedLocal() {
+    final key = "LF_DATA_${widget.diagnosisId}_${widget.pid}";
+    final savedJson = AppPreference().getString(key);
 
-      if (saved.isNotEmpty) {
-        List<String> part = saved.split(",");
-        p.x = double.parse(part[0]);
-        p.y = double.parse(part[1]);
-        p.state = int.parse(part[2]);
-      }
-    }
+    if (savedJson.isEmpty) return;
+
+    final decoded = jsonDecode(savedJson) as Map<String, dynamic>;
+
+    decoded.forEach((idx, val) {
+      final parts = val.split(",");
+      final p = points.firstWhere((e) => e.index.toString() == idx);
+      p.x = double.parse(parts[0]);
+      p.y = double.parse(parts[1]);
+      p.state = int.parse(parts[2]);
+    });
   }
 
-  Future<void> savePointLocal(PointData p) async {
-    await AppPreference().setString("LF_${p.index}", "${p.x},${p.y},${p.state}");
-  }
+  // ---------------------------------------------------
+  // FAST LOCAL SAVE (Only ONE write)
+  // ---------------------------------------------------
+  Future<void> saveAllPointsFast() async {
+    Map<String, String> data = {};
 
-  Future<void> saveAllPointsLocal() async {
     for (var p in points) {
-      await savePointLocal(p);
+      data[p.index.toString()] = "${p.x},${p.y},${p.state}";
     }
+
+    final jsonData = jsonEncode(data);
+    await AppPreference().setString(
+      "LF_DATA_${widget.diagnosisId}_${widget.pid}",
+      jsonData,
+    );
   }
 
   // --------------------------------------------------
@@ -135,7 +143,6 @@ class _LeftFootScreenNewState extends State<LeftFootScreenNew> {
         options: Options(responseType: ResponseType.plain),
       );
 
-      // Extract pure JSON from HTML
       String raw = response.data.toString();
       int start = raw.indexOf("{");
       int end = raw.lastIndexOf("}");
@@ -144,9 +151,7 @@ class _LeftFootScreenNewState extends State<LeftFootScreenNew> {
       final jsonBody = jsonDecode(jsonString);
 
       if (jsonBody["success"] == 1) {
-
         String dataStr = jsonBody["data"];
-
         Map<int, int> serverMap = {};
 
         for (String item in dataStr.split(";")) {
@@ -156,17 +161,15 @@ class _LeftFootScreenNewState extends State<LeftFootScreenNew> {
           }
         }
 
-        // Map server → UI
         for (var p in points) {
           if (serverMap.containsKey(p.index)) {
             int v = serverMap[p.index]!;
-
             if (v == 1)
-              p.state = 2; // GREEN
+              p.state = 2;
             else if (v == -1)
-              p.state = 0; // WHITE
+              p.state = 0;
             else
-              p.state = 1; // RED
+              p.state = 1;
           }
         }
       }
@@ -176,7 +179,7 @@ class _LeftFootScreenNewState extends State<LeftFootScreenNew> {
   }
 
   // --------------------------------------------------
-  // SAVE TO SERVER
+  // SAVE TO SERVER (Background call)
   // --------------------------------------------------
   Future<void> saveAllToServer() async {
     StringBuffer sb = StringBuffer();
@@ -185,17 +188,17 @@ class _LeftFootScreenNewState extends State<LeftFootScreenNew> {
       int sendVal;
 
       if (p.state == 2)
-        sendVal = 1; // GREEN
+        sendVal = 1;
       else if (p.state == 0)
-        sendVal = -1; // WHITE
+        sendVal = -1;
       else
-        sendVal = 0; // RED
+        sendVal = 0;
 
       sb.write("${p.index}:$sendVal;");
     }
 
     try {
-      final response = await Dio().post(
+      await Dio().post(
         "https://jinreflexology.in/api/save_data.php",
         data: FormData.fromMap({
           "diagnosisId": widget.diagnosisId,
@@ -204,8 +207,6 @@ class _LeftFootScreenNewState extends State<LeftFootScreenNew> {
           "data": sb.toString(),
         }),
       );
-
-      print("SAVE SERVER RESPONSE: ${response.data}");
     } catch (e) {
       print("SAVE ERROR: $e");
     }
@@ -229,8 +230,6 @@ class _LeftFootScreenNewState extends State<LeftFootScreenNew> {
         setState(() {
           p.state = (p.state + 1) % 3;
         });
-
-        savePointLocal(p);
       },
       child: Container(
         width: 18 * scale,
@@ -245,6 +244,31 @@ class _LeftFootScreenNewState extends State<LeftFootScreenNew> {
   }
 
   // --------------------------------------------------
+  // SAVE & EXIT BUTTON
+  // --------------------------------------------------
+  Future<void> _saveAndExit() async {
+    // Fast local save
+    await saveAllPointsFast();
+
+    // Mark as completed
+    await AppPreference().setBool(
+      "LF_SAVED_${widget.diagnosisId}_${widget.pid}",
+      true,
+    );
+
+    // Small notification
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text("Saving data, please wait...")));
+
+    // Go back instantly
+    Navigator.pop(context);
+
+    // Server saving background
+    saveAllToServer();
+  }
+
+  // --------------------------------------------------
   // UI
   // --------------------------------------------------
   @override
@@ -256,48 +280,45 @@ class _LeftFootScreenNewState extends State<LeftFootScreenNew> {
       ),
 
       floatingActionButton: FloatingActionButton.extended(
-        onPressed: () async {
-          await saveAllPointsLocal();
-          await saveAllToServer();
-          Navigator.pop(context);
-        },
+        onPressed: _saveAndExit,
         label: Text("Save"),
         backgroundColor: Colors.green,
       ),
 
-      body: isLoading
-          ? Center(child: CircularProgressIndicator())
-          : Center(
-              child: AspectRatio(
-                aspectRatio: baseWidth / baseHeight,
-                child: LayoutBuilder(
-                  builder: (context, c) {
-                    final double scaleX = c.maxWidth / baseWidth;
-                    final double scaleY = c.maxHeight / baseHeight;
-                    final double scale = (scaleX + scaleY) / 2;
+      body:
+          isLoading
+              ? Center(child: CircularProgressIndicator())
+              : Center(
+                child: AspectRatio(
+                  aspectRatio: baseWidth / baseHeight,
+                  child: LayoutBuilder(
+                    builder: (context, c) {
+                      final double scaleX = c.maxWidth / baseWidth;
+                      final double scaleY = c.maxHeight / baseHeight;
+                      final double scale = (scaleX + scaleY) / 2;
 
-                    return Stack(
-                      children: [
-                        Positioned.fill(
-                          child: Image.asset(
-                            'assets/images/point_finder_lf.png',
-                            fit: BoxFit.fill,
+                      return Stack(
+                        children: [
+                          Positioned.fill(
+                            child: Image.asset(
+                              'assets/images/point_finder_lf.png',
+                              fit: BoxFit.fill,
+                            ),
                           ),
-                        ),
 
-                        ...points.map((p) {
-                          return Positioned(
-                            left: p.x * scaleX,
-                            top: p.y * scaleY,
-                            child: _buildDot(p, scale),
-                          );
-                        }).toList(),
-                      ],
-                    );
-                  },
+                          ...points.map((p) {
+                            return Positioned(
+                              left: p.x * scaleX,
+                              top: p.y * scaleY,
+                              child: _buildDot(p, scale),
+                            );
+                          }).toList(),
+                        ],
+                      );
+                    },
+                  ),
                 ),
               ),
-            ),
     );
   }
 }
