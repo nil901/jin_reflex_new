@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'dart:convert';
 import 'dart:math' as math;
+import 'dart:ui' as ui;
 import 'package:flutter/services.dart';
+import 'package:flutter/rendering.dart';
 import 'package:dio/dio.dart';
 import 'package:jin_reflex_new/api_service/prefs/app_preference.dart';
 
@@ -50,6 +52,8 @@ class rightFootScreenNew extends StatefulWidget {
 class _rightFootScreenNewState extends State<rightFootScreenNew> {
   List<PointData> points = [];
   bool isLoading = true;
+
+  final GlobalKey screenshotKey = GlobalKey();
 
   @override
   void initState() {
@@ -199,6 +203,23 @@ class _rightFootScreenNewState extends State<rightFootScreenNew> {
     }
   }
 
+  // --------------------------------------------------
+  // CAPTURE SCREENSHOT
+  // --------------------------------------------------
+  Future<String?> captureScreenshot() async {
+    try {
+      RenderRepaintBoundary boundary = screenshotKey.currentContext!.findRenderObject() as RenderRepaintBoundary;
+      ui.Image image = await boundary.toImage(pixelRatio: 3.0);
+      ByteData? byteData = await image.toByteData(format: ui.ImageByteFormat.png);
+      Uint8List pngBytes = byteData!.buffer.asUint8List();
+      String base64 = base64Encode(pngBytes);
+      return base64;
+    } catch (e) {
+      print("Screenshot error: $e");
+      return null;
+    }
+  }
+
   // ---------------------------------------------------------
   // DOT UI (FIXED DOT – NO MOVE)
   Widget _buildDot(PointData p, double scaleX, double scaleY) {
@@ -242,6 +263,12 @@ class _rightFootScreenNewState extends State<rightFootScreenNew> {
   // SAVE & EXIT
   Future<void> _saveAndExit() async {
     await saveAllPointsFast();
+
+    // Capture screenshot
+    final base64 = await captureScreenshot();
+    if (base64 != null) {
+      await AppPreference().setString("RF_IMG_${widget.diagnosisId}_${widget.pid}", base64);
+    }
 
     await AppPreference().setBool(
       "RF_SAVED_${widget.diagnosisId}_${widget.pid}",
@@ -289,23 +316,26 @@ class _rightFootScreenNewState extends State<rightFootScreenNew> {
                 child: Container(
                   width: containerW,
                   height: containerH,
-                  child: Stack(
-                    children: [
-                      Image.asset(
-                        'assets/images/point_finder_rf.png',
-                        width: containerW,
-                        height: containerH,
-                        fit: BoxFit.contain,
-                      ),
+                  child: RepaintBoundary(
+                    key: screenshotKey,
+                    child: Stack(
+                      children: [
+                        Image.asset(
+                          'assets/images/point_finder_rf.png',
+                          width: containerW,
+                          height: containerH,
+                          fit: BoxFit.contain,
+                        ),
 
-                      ...points.map((p) {
-                        return Positioned(
-                          left: p.x * scaleX,
-                          top: p.y * scaleY,
-                          child: _buildDot(p, scaleX, scaleY),
-                        );
-                      }).toList(),
-                    ],
+                        ...points.map((p) {
+                          return Positioned(
+                            left: p.x * scaleX,
+                            top: p.y * scaleY,
+                            child: _buildDot(p, scaleX, scaleY),
+                          );
+                        }).toList(),
+                      ],
+                    ),
                   ),
                 ),
               ),

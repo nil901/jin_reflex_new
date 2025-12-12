@@ -45,54 +45,55 @@ class _MemberListScreenState extends State<MemberListScreen> {
     final search = query.toLowerCase();
 
     setState(() {
-      filteredPatients = patients.where((p) {
-        return p.name.toLowerCase().contains(search) ||
-               p.mobile.contains(query);
-      }).toList();
+      filteredPatients =
+          patients.where((p) {
+            return p.name.toLowerCase().contains(search) ||
+                p.mobile.contains(query);
+          }).toList();
     });
   }
 
-    // ---------------- API CALL ----------------
-    Future<void> fetchPatients() async {
-      try {
-        final response = await ApiService().postRequest(
-          "https://jinreflexology.in/api/list_patients.php?pid=22",
-          {},
-        );
+  // ---------------- API CALL ----------------
+  Future<void> fetchPatients() async {
+    try {
+      final response = await ApiService().postRequest(
+        "https://jinreflexology.in/api/list_patients.php?pid=22",
+        {},
+      );
 
-        if (response?.statusCode == 200) {
+      if (response?.statusCode == 200) {
+        dynamic jsonBody;
 
-          dynamic jsonBody;
-
-          if (response?.data is String) {
-            jsonBody = jsonDecode(response?.data);
-          } else {
-            jsonBody = response?.data;
-          }
-
-          final raw = jsonBody['data'];
-
-          List<PatientData> diagnosisLists = [];
-
-          if (raw is List) {
-            diagnosisLists = raw.map((e) => PatientData.fromJson(e)).toList();
-          } else if (raw is Map) {
-            diagnosisLists = raw.values.map((e) => PatientData.fromJson(e)).toList();
-          }
-
-          setState(() {
-            patients = diagnosisLists;
-            filteredPatients = diagnosisLists;   // <-- For search
-            isLoading = false;
-          });
+        if (response?.data is String) {
+          jsonBody = jsonDecode(response?.data);
         } else {
-          setState(() => isLoading = false);
+          jsonBody = response?.data;
         }
-      } catch (e) {
-        print("ERROR: $e");
+
+        final raw = jsonBody['data'];
+
+        List<PatientData> diagnosisLists = [];
+
+        if (raw is List) {
+          diagnosisLists = raw.map((e) => PatientData.fromJson(e)).toList();
+        } else if (raw is Map) {
+          diagnosisLists =
+              raw.values.map((e) => PatientData.fromJson(e)).toList();
+        }
+
+        setState(() {
+          patients = diagnosisLists;
+          filteredPatients = diagnosisLists; // <-- For search
+          isLoading = false;
+        });
+      } else {
         setState(() => isLoading = false);
       }
+    } catch (e) {
+      print("ERROR: $e");
+      setState(() => isLoading = false);
     }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -118,7 +119,11 @@ class _MemberListScreenState extends State<MemberListScreen> {
                       child: Row(
                         children: [
                           const SizedBox(width: 12),
-                          const Icon(Icons.search, color: Colors.orange, size: 26),
+                          const Icon(
+                            Icons.search,
+                            color: Colors.orange,
+                            size: 26,
+                          ),
                           const SizedBox(width: 8),
 
                           Expanded(
@@ -139,13 +144,11 @@ class _MemberListScreenState extends State<MemberListScreen> {
                   const SizedBox(width: 10),
 
                   InkWell(
-
-                    onTap: (){
-                      
-                          Navigator.push(
-                                  context,
-                                  MaterialPageRoute(builder: (_) => AddPatientScreen()),
-                                );
+                    onTap: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(builder: (_) => AddPatientScreen()),
+                      );
                     },
                     child: Container(
                       height: 48,
@@ -155,7 +158,11 @@ class _MemberListScreenState extends State<MemberListScreen> {
                         borderRadius: BorderRadius.circular(14),
                         border: Border.all(color: Colors.orange, width: 2),
                       ),
-                      child: const Icon(Icons.add, color: Colors.orange, size: 28),
+                      child: const Icon(
+                        Icons.add,
+                        color: Colors.orange,
+                        size: 28,
+                      ),
                     ),
                   ),
                 ],
@@ -166,40 +173,47 @@ class _MemberListScreenState extends State<MemberListScreen> {
 
             // ---------------- PATIENT LIST ----------------
             Expanded(
-              child: isLoading
-                  ? const Center(
-                      child: CircularProgressIndicator(color: Colors.orange),
-                    )
-                  : filteredPatients.isEmpty
+              child:
+                  isLoading
                       ? const Center(
-                          child: Text(
-                            "No Patients Found",
-                            style: TextStyle(fontSize: 16),
-                          ),
-                        )
-                      : ListView.builder(
-                          padding: const EdgeInsets.symmetric(horizontal: 14),
-                          itemCount: filteredPatients.length,
-                          itemBuilder: (context, index) {
-                            final patient = filteredPatients[index];
-
-                            return InkWell(
-                              onTap: () {
-                                
-                                 Navigator.push(
-                                  context,
-                                  MaterialPageRoute(builder: (_) => DiagnosisListScreen(patientName: patient.name,pid: "22",diagnosisId:patient.id ,patientId: patient.id,)),
-                                );
-                                
-                              },
-                              child: listItem(
-                                id: patient.id,
-                                name: patient.name,
-                                phone: patient.mobile,
-                              ),
-                            );
-                          },
+                        child: CircularProgressIndicator(color: Colors.orange),
+                      )
+                      : filteredPatients.isEmpty
+                      ? const Center(
+                        child: Text(
+                          "No Patients Found",
+                          style: TextStyle(fontSize: 16),
                         ),
+                      )
+                      : ListView.builder(
+                        padding: const EdgeInsets.symmetric(horizontal: 14),
+                        itemCount: filteredPatients.length,
+                        itemBuilder: (context, index) {
+                          final patient = filteredPatients[index];
+
+                          return InkWell(
+                            onTap: () {
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder:
+                                      (_) => DiagnosisListScreen(
+                                        patientName: patient.name,
+                                        pid: "22",
+                                        diagnosisId: patient.id,
+                                        patientId: patient.id,
+                                      ),
+                                ),
+                              );
+                            },
+                            child: listItem(
+                              id: patient.id,
+                              name: patient.name,
+                              phone: patient.mobile,
+                            ),
+                          );
+                        },
+                      ),
             ),
           ],
         ),
@@ -235,10 +249,7 @@ class _MemberListScreenState extends State<MemberListScreen> {
                     name,
                     overflow: TextOverflow.ellipsis,
                     maxLines: 1,
-                    style: const TextStyle(
-                      color: Colors.black87,
-                      fontSize: 15,
-                    ),
+                    style: const TextStyle(color: Colors.black87, fontSize: 15),
                   ),
                 ),
               ],
@@ -254,4 +265,3 @@ class _MemberListScreenState extends State<MemberListScreen> {
     );
   }
 }
-

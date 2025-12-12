@@ -1,12 +1,14 @@
-import 'package:flutter/material.dart';
-import 'package:jin_reflex_new/screens/Diagnosis/left_foot_screen.dart';
-import 'package:jin_reflex_new/screens/left_foot_screen.dart';
-import 'package:jin_reflex_new/screens/left_hand_sc.dart';
-import 'package:jin_reflex_new/screens/right_hand_sc.dart';
-import 'package:jin_reflex_new/screens/right_screen.dart';
 import 'dart:convert';
+import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show rootBundle;
 import 'package:jin_reflex_new/api_service/prefs/app_preference.dart';
+import 'package:http/http.dart' as http;
+import 'package:intl/intl.dart';
+
+import 'package:jin_reflex_new/screens/foot_images/left_foot_screen.dart';
+import 'package:jin_reflex_new/screens/foot_images/left_hand_sc.dart';
+import 'package:jin_reflex_new/screens/foot_images/right_hand_sc.dart';
+import 'package:jin_reflex_new/screens/foot_images/right_screen.dart';
 
 class DiagnosisScreen extends StatefulWidget {
   const DiagnosisScreen({
@@ -15,9 +17,11 @@ class DiagnosisScreen extends StatefulWidget {
     this.name,
     this.diagnosis_id,
   });
-  final patient_id;
-  final name;
-  final diagnosis_id;
+
+  // keep dynamic for flexibility (int or String)
+  final dynamic patient_id;
+  final dynamic name;
+  final dynamic diagnosis_id;
 
   @override
   State<DiagnosisScreen> createState() => _DiagnosisScreenState();
@@ -28,7 +32,6 @@ class _DiagnosisScreenState extends State<DiagnosisScreen> {
   final TextEditingController matchedProblem = TextEditingController();
   final TextEditingController notDetected = TextEditingController();
 
-  // diagnosis status flags
   bool lfSaved = false;
   bool rfSaved = false;
   bool lhSaved = false;
@@ -48,23 +51,34 @@ class _DiagnosisScreenState extends State<DiagnosisScreen> {
   }
 
   void loadSavedStatus() {
-    setState(() {
-      lfSaved = AppPreference().getBool(
-        "LF_SAVED_${widget.diagnosis_id}_${widget.patient_id}",
+    try {
+      final lfKey = "LF_SAVED_${widget.diagnosis_id}_${widget.patient_id}";
+      final rfKey = "RF_SAVED_${widget.diagnosis_id}_${widget.patient_id}";
+      final lhKey = "LH_SAVED_${widget.diagnosis_id}_${widget.patient_id}";
+      final rhKey = "RH_SAVED_${widget.diagnosis_id}_${widget.patient_id}";
+
+      final lf = AppPreference().getBool(lfKey);
+      final rf = AppPreference().getBool(rfKey);
+      final lh = AppPreference().getBool(lhKey);
+      final rh = AppPreference().getBool(rhKey);
+
+      debugPrint(
+        "LOAD SAVED STATUS -> LF:$lfKey=$lf, RF:$rfKey=$rf, LH:$lhKey=$lh, RH:$rhKey=$rh",
       );
-      rfSaved = AppPreference().getBool(
-        "RF_SAVED_${widget.diagnosis_id}_${widget.patient_id}",
-      );
-      lhSaved = AppPreference().getBool(
-        "LH_SAVED_${widget.diagnosis_id}_${widget.patient_id}",
-      );
-      rhSaved = AppPreference().getBool(
-        "RH_SAVED_${widget.diagnosis_id}_${widget.patient_id}",
-      );
-    });
+
+      setState(() {
+        lfSaved = lf;
+        rfSaved = rf;
+        lhSaved = lh;
+        rhSaved = rh;
+      });
+    } catch (e, st) {
+      debugPrint("Error in loadSavedStatus: $e");
+      debugPrint("$st");
+      // keep defaults (false)
+    }
   }
 
-  // dynamically get border
   Color _borderColor(String option) {
     if (option == "Diagnose Left Foot" && lfSaved) return Colors.green;
     if (option == "Diagnose Right Foot" && rfSaved) return Colors.green;
@@ -78,7 +92,6 @@ class _DiagnosisScreenState extends State<DiagnosisScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: const Color(0xffF7F3EB),
-
       appBar: AppBar(
         backgroundColor: Colors.indigo.shade900,
         centerTitle: true,
@@ -88,13 +101,11 @@ class _DiagnosisScreenState extends State<DiagnosisScreen> {
           style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
         ),
       ),
-
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            /// 🔶 Patient Header Bar
             Container(
               width: double.infinity,
               padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 12),
@@ -125,7 +136,6 @@ class _DiagnosisScreenState extends State<DiagnosisScreen> {
 
             const SizedBox(height: 20),
 
-            /// 🔶 DIAGNOSIS TITLE BAR
             Container(
               width: double.infinity,
               padding: const EdgeInsets.symmetric(vertical: 12),
@@ -148,7 +158,6 @@ class _DiagnosisScreenState extends State<DiagnosisScreen> {
 
             const SizedBox(height: 14),
 
-            /// 🔘 DIAGNOSIS OPTIONS LIST
             ...diagnosisOptions.map((option) {
               return Container(
                 margin: const EdgeInsets.only(bottom: 10),
@@ -168,15 +177,15 @@ class _DiagnosisScreenState extends State<DiagnosisScreen> {
                     ),
                   ),
                   onTap: () {
-                    // Navigation with response
                     if (option == "Diagnose Left Foot") {
                       Navigator.push(
                         context,
                         MaterialPageRoute(
                           builder:
-                              (context) => LeftFootScreenNew(
-                                pid: widget.patient_id,
-                                diagnosisId: widget.diagnosis_id,
+                              (_) => LeftFootScreenNew(
+                                diagnosisId: widget.diagnosis_id.toString(),
+                                patientId: widget.patient_id.toString(),
+                                pid: "22", // ← ALWAYS STRING
                               ),
                         ),
                       ).then((_) {
@@ -221,15 +230,12 @@ class _DiagnosisScreenState extends State<DiagnosisScreen> {
                       ).then((_) {
                         loadSavedStatus();
                       });
-                    } else {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text("Coming Soon")),
-                      );
                     }
                   },
                 ),
               );
             }),
+
             const SizedBox(height: 10),
 
             Container(
@@ -249,24 +255,24 @@ class _DiagnosisScreenState extends State<DiagnosisScreen> {
                   Row(
                     children: [
                       Expanded(
-                        child: RadioListTile(
+                        child: RadioListTile<String>(
                           value: "Yes",
                           groupValue: satisfaction,
                           title: const Text("Yes"),
                           activeColor: Colors.orange,
                           onChanged: (value) {
-                            setState(() => satisfaction = value.toString());
+                            setState(() => satisfaction = value);
                           },
                         ),
                       ),
                       Expanded(
-                        child: RadioListTile(
+                        child: RadioListTile<String>(
                           value: "No",
                           groupValue: satisfaction,
                           title: const Text("No"),
                           activeColor: Colors.orange,
                           onChanged: (value) {
-                            setState(() => satisfaction = value.toString());
+                            setState(() => satisfaction = value);
                           },
                         ),
                       ),
@@ -291,6 +297,7 @@ class _DiagnosisScreenState extends State<DiagnosisScreen> {
           ],
         ),
       ),
+
       bottomNavigationBar: Container(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
         decoration: BoxDecoration(
@@ -310,12 +317,7 @@ class _DiagnosisScreenState extends State<DiagnosisScreen> {
               Navigator.pop(context);
             }),
             _button("Submit", Colors.green, () async {
-              await _printSavedDiagnosisData();
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text("Diagnosis Submitted Successfully"),
-                ),
-              );
+              await _submitDiagnosis();
             }),
           ],
         ),
@@ -323,9 +325,6 @@ class _DiagnosisScreenState extends State<DiagnosisScreen> {
     );
   }
 
-  // ---------------------------------------
-  // INPUT FIELD
-  // ---------------------------------------
   Widget _textInput(String label, TextEditingController controller) {
     return TextField(
       controller: controller,
@@ -341,9 +340,6 @@ class _DiagnosisScreenState extends State<DiagnosisScreen> {
     );
   }
 
-  // ---------------------------------------
-  // CUSTOM BUTTON
-  // ---------------------------------------
   Widget _button(String label, Color color, VoidCallback onTap) {
     return ElevatedButton(
       onPressed: onTap,
@@ -363,121 +359,296 @@ class _DiagnosisScreenState extends State<DiagnosisScreen> {
     );
   }
 
-  // ---------------------------------------
-  // PRINT SAVED DIAGNOSIS DATA
-  // ---------------------------------------
-  Future<void> _printSavedDiagnosisData() async {
-    // mapping of part -> (assetPath, jsonListKey, prefKeyPrefix, label)
-    final parts = [
-      {
-        'label': 'LF',
-        'asset': 'assets/button.json',
-        'listKey': 'buttons',
-        'pref': 'LF_DATA_${widget.diagnosis_id}_${widget.patient_id}',
-      },
-      {
-        'label': 'RF',
-        'asset': 'assets/right_foot.json',
-        'listKey': 'RightFoot',
-        'pref': 'RF_DATA_${widget.diagnosis_id}_${widget.patient_id}',
-      },
-      {
-        'label': 'LH',
-        'asset': 'assets/left_hand_btn.json',
-        'listKey': 'LeftHand',
-        'pref': 'LH_DATA_${widget.diagnosis_id}_${widget.patient_id}',
-      },
-      {
-        'label': 'RH',
-        'asset': 'assets/right_hand_btn.json',
-        'listKey': 'RightHand',
-        'pref': 'RH_DATA_${widget.diagnosis_id}_${widget.patient_id}',
-      },
-    ];
+  // Builds data/result for a part (LF/RF/LH/RH)
+  Future<Map<String, String>> _buildDataForPart(
+    String label,
+    String asset,
+    String listKey,
+    String prefKey,
+  ) async {
+    debugPrint(
+      ">>> _buildDataForPart START ($label) asset:$asset listKey:$listKey prefKey:$prefKey",
+    );
 
-    for (var part in parts) {
-      final label = part['label'] as String;
-      final asset = part['asset'] as String;
-      final listKey = part['listKey'] as String;
-      final prefKey = part['pref'] as String;
+    Map<String, dynamic> idMap = {};
+    try {
+      final jsonStr = await rootBundle.loadString(asset);
+      final Map<String, dynamic> jsonMap = jsonDecode(jsonStr);
+      final dynamic arrDyn = jsonMap[listKey];
 
-      // Load asset once to map index -> id (for lookup)
-      Map<String, dynamic> idMap = {};
-      try {
-        final jsonStr = await rootBundle.loadString(asset);
-        final Map<String, dynamic> jsonMap = jsonDecode(jsonStr);
-        final List<dynamic> arr = jsonMap[listKey] as List<dynamic>;
-        for (var item in arr) {
+      if (arrDyn is List) {
+        for (var item in arrDyn) {
           try {
             final idx = item['index'].toString();
-            idMap[idx] = item; // keep whole item (id,x,y,etc)
+            idMap[idx] = item;
           } catch (e) {
-            // ignore item parse errors
+            debugPrint("Skipping invalid item in asset for $label: $e");
           }
         }
-      } catch (e) {
-        // asset load failed - continue, we'll still try pref values
-      }
-
-      final saved = AppPreference().getString(prefKey);
-
-      if (saved.isEmpty) {
-        // no saved local data; print a notice
-        print('$label: No local saved data found for key $prefKey');
-        continue;
-      }
-
-      Map<String, dynamic> decoded;
-      try {
-        decoded = jsonDecode(saved) as Map<String, dynamic>;
-      } catch (e) {
-        print('$label: Saved data for $prefKey is not valid JSON');
-        continue;
-      }
-
-      // Iterate sorted by index for readability
-      final keys =
-          decoded.keys.toList()
-            ..sort((a, b) => int.parse(a).compareTo(int.parse(b)));
-
-      for (var idx in keys) {
-        final val = decoded[idx] as String;
-        final parts = val.split(',');
-        final x = parts.isNotEmpty ? parts[0] : '';
-        final y = parts.length > 1 ? parts[1] : '';
-        final state = parts.length > 2 ? parts[2] : '';
-
-        final idItem = idMap[idx];
-        final id =
-            (idItem != null && idItem['id'] != null)
-                ? idItem['id'].toString()
-                : 'IDX_$idx';
-
-        // compute server mapping: state 2 -> 1, state 0 -> -1, state 1 -> 0
-        int? stateInt;
-        try {
-          stateInt = int.parse(state);
-        } catch (e) {
-          stateInt = null;
-        }
-
-        int? serverVal;
-        if (stateInt == 2)
-          serverVal = 1;
-        else if (stateInt == 0)
-          serverVal = -1;
-        else if (stateInt == 1)
-          serverVal = 0;
-        else
-          serverVal = null;
-
-        final serverStr = serverVal != null ? serverVal.toString() : '';
-
-        // Print in requested format with server mapping
-        print(
-          '$label: ID=$id, Index=$idx, X=$x, Y=$y, State=$state, ServerVal=$serverStr',
+      } else {
+        debugPrint(
+          "Asset $asset: expected list at $listKey but found ${arrDyn.runtimeType}",
         );
       }
+      debugPrint("Asset loaded for $label, idMap size: ${idMap.length}");
+    } catch (e, st) {
+      debugPrint("Error loading/parsing asset '$asset' for $label: $e");
+      debugPrint("$st");
     }
+
+    final saved = AppPreference().getString(prefKey);
+    debugPrint("PREF ($prefKey) => '$saved'");
+
+    if (saved.isEmpty) {
+      debugPrint("$label saved string empty -> returning empty map");
+      return {
+        '${label.toLowerCase()}_data': '',
+        '${label.toLowerCase()}_result': '',
+      };
+    }
+
+    Map<String, dynamic> decoded;
+    try {
+      decoded = jsonDecode(saved) as Map<String, dynamic>;
+    } catch (e) {
+      debugPrint("Error decoding saved JSON for $label: $e");
+      return {
+        '${label.toLowerCase()}_data': '',
+        '${label.toLowerCase()}_result': '',
+      };
+    }
+
+    List<String> dataParts = [];
+    List<String> resultParts = [];
+
+    for (var idx in decoded.keys) {
+      try {
+        final val = decoded[idx] as String;
+        final parts = val.split(',');
+        final stateStr = parts.length > 2 ? parts[2] : '';
+        final state = int.tryParse(stateStr);
+
+        // skip if state null or zero
+        if (state == null || state == 0) continue;
+
+        int serverVal;
+        if (state == 2) {
+          serverVal = 1;
+        } else if (state == 1) {
+          serverVal = 0;
+        } else {
+          // unknown state, skip
+          continue;
+        }
+
+        dataParts.add('$idx:$serverVal');
+
+        final item = idMap[idx];
+        if (item != null && item['tag'] != null) {
+          resultParts.add(item['tag'].toString());
+        }
+      } catch (e) {
+        debugPrint("Error processing saved entry $idx for $label: $e");
+      }
+    }
+
+    final res = {
+      '${label.toLowerCase()}_data': dataParts.join(';'),
+      '${label.toLowerCase()}_result': resultParts.join('|'),
+    };
+
+    debugPrint(
+      "$label build result -> data: ${res['${label.toLowerCase()}_data']}, result: ${res['${label.toLowerCase()}_result']}",
+    );
+    return res;
+  }
+
+  Future<void> _submitDiagnosis() async {
+    debugPrint(
+      ">>> _submitDiagnosis START for pid=${widget.patient_id}, diag=${widget.diagnosis_id}",
+    );
+
+    // -------------------------------
+    // Build all 4 part data
+    // -------------------------------
+    var lf = await _buildDataForPart(
+      'LF',
+      'assets/button.json',
+      'buttons',
+      'LF_DATA_${widget.diagnosis_id}_${widget.patient_id}',
+    );
+    var rf = await _buildDataForPart(
+      'RF',
+      'assets/right_foot.json',
+      'RightFoot',
+      'RF_DATA_${widget.diagnosis_id}_${widget.patient_id}',
+    );
+    var lh = await _buildDataForPart(
+      'LH',
+      'assets/left_hand_btn.json',
+      'LeftHand',
+      'LH_DATA_${widget.diagnosis_id}_${widget.patient_id}',
+    );
+    var rh = await _buildDataForPart(
+      'RH',
+      'assets/right_hand_btn.json',
+      'RightHand',
+      'RH_DATA_${widget.diagnosis_id}_${widget.patient_id}',
+    );
+
+    String timestamp = DateFormat('yyyy-MM-dd HH:mm:ss').format(DateTime.now());
+
+    // -------------------------------
+    // PREPARE REQUEST
+    // -------------------------------
+    var uri = Uri.parse("https://jinreflexology.in/api/add_diagnosis.php");
+    var request = http.MultipartRequest("POST", uri);
+
+    // pid ALWAYS static = 22
+    request.fields["pid"] = "22";
+
+    // patient_id = dynamic
+    request.fields["patient_id"] = widget.patient_id.toString();
+    request.fields["timestamp"] = timestamp;
+
+    // Only add if not empty
+    if (lf['lf_data']!.isNotEmpty) {
+      request.fields['lf_data'] = lf['lf_data']!;
+      request.fields['lf_result'] = lf['lf_result']!;
+    }
+    if (rf['rf_data']!.isNotEmpty) {
+      request.fields['rf_data'] = rf['rf_data']!;
+      request.fields['rf_result'] = rf['rf_result']!;
+    }
+    if (lh['lh_data']!.isNotEmpty) {
+      request.fields['lh_data'] = lh['lh_data']!;
+      request.fields['lh_result'] = lh['lh_result']!;
+    }
+    if (rh['rh_data']!.isNotEmpty) {
+      request.fields['rh_data'] = rh['rh_data']!;
+      request.fields['rh_result'] = rh['rh_result']!;
+    }
+
+    // -------------------------------
+    // Load Base64 images from Prefs
+    // -------------------------------
+    final lfImg =
+        AppPreference().getString(
+          "LF_IMG_${widget.diagnosis_id}_${widget.patient_id}",
+        ) ??
+        "";
+    final rfImg =
+        AppPreference().getString(
+          "RF_IMG_${widget.diagnosis_id}_${widget.patient_id}",
+        ) ??
+        "";
+    final lhImg =
+        AppPreference().getString(
+          "LH_IMG_${widget.diagnosis_id}_${widget.patient_id}",
+        ) ??
+        "";
+    final rhImg =
+        AppPreference().getString(
+          "RH_IMG_${widget.diagnosis_id}_${widget.patient_id}",
+        ) ??
+        "";
+
+    debugPrint(
+      "IMG LENGTHS => LF:${lfImg.length}, RF:${rfImg.length}, LH:${lhImg.length}, RH:${rhImg.length}",
+    );
+
+    // Missing image check
+    final missing = <String>[];
+    if (lfImg.isEmpty) missing.add("lf_img");
+    if (rfImg.isEmpty) missing.add("rf_img");
+    if (lhImg.isEmpty) missing.add("lh_img");
+    if (rhImg.isEmpty) missing.add("rh_img");
+
+    if (missing.isNotEmpty) {
+      debugPrint("ERROR: Missing images => $missing");
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text("Missing screenshots: ${missing.join(", ")}")),
+      );
+      return;
+    }
+
+    // Add images to fields
+    request.fields["lf_img"] = lfImg;
+    request.fields["rf_img"] = rfImg;
+    request.fields["lh_img"] = lhImg;
+    request.fields["rh_img"] = rhImg;
+
+    // Duplicate fields as required
+    request.fields["lf_img2"] = lfImg;
+    request.fields["lh_img2"] = lhImg;
+
+    // Other form fields
+    request.fields["is_satisfied"] = satisfaction ?? "Yes";
+    request.fields["not_detected"] = notDetected.text;
+    request.fields["problems_matched"] = matchedProblem.text;
+
+    // -------------------------------
+    // POSTMAN DEBUG JSON OUTPUT
+    // -------------------------------
+    final postmanBody = {
+      "pid": "22",
+      "patient_id": widget.patient_id.toString(),
+      "timestamp": timestamp,
+      "lf_data": lf["lf_data"],
+      "lf_result": lf["lf_result"],
+      "rf_data": rf["rf_data"],
+      "rf_result": rf["rf_result"],
+      "lh_data": lh["lh_data"],
+      "lh_result": lh["lh_result"],
+      "rh_data": rh["rh_data"],
+      "rh_result": rh["rh_result"],
+      "lf_img": lfImg,
+      "rf_img": rfImg,
+      "lh_img": lhImg,
+      "rh_img": rhImg,
+      "lf_img2": lfImg,
+      "lh_img2": lhImg,
+      "is_satisfied": satisfaction ?? "Yes",
+      "not_detected": notDetected.text,
+      "problems_matched": matchedProblem.text,
+    };
+
+    debugPrint("=========== POSTMAN JSON ===========");
+    debugPrint(jsonEncode(postmanBody)); // <-- copy this into Postman
+    debugPrint("====================================");
+
+    // -------------------------------
+    // SEND REQUEST
+    // -------------------------------
+    try {
+      final streamedResponse = await request.send();
+      final responseString = await streamedResponse.stream.bytesToString();
+
+      debugPrint("API STATUS: ${streamedResponse.statusCode}");
+      debugPrint("API RESPONSE: $responseString");
+
+      if (streamedResponse.statusCode == 200) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text("Diagnosis Submitted Successfully")),
+        );
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text("Error: ${streamedResponse.statusCode}")),
+        );
+      }
+    } catch (e, st) {
+      debugPrint("API ERROR: $e");
+      debugPrint("$st");
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text("Error: $e")));
+    }
+  }
+
+  @override
+  void dispose() {
+    matchedProblem.dispose();
+    notDetected.dispose();
+    super.dispose();
   }
 }

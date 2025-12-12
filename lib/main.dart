@@ -3,8 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:get/get_navigation/src/root/get_material_app.dart';
 import 'package:jin_reflex_new/api_service/prefs/app_preference.dart';
 import 'package:jin_reflex_new/login_screen.dart';
-import 'package:jin_reflex_new/screens/left_hand_sc.dart';
-import 'package:jin_reflex_new/screens/right_hand_sc.dart';
+import 'package:jin_reflex_new/screens/foot_images/left_hand_sc.dart';
+import 'package:jin_reflex_new/screens/foot_images/right_hand_sc.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();

@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'dart:convert';
 import 'dart:math' as math;
+import 'dart:ui' as ui;
 import 'package:flutter/services.dart';
+import 'package:flutter/rendering.dart';
 import 'package:dio/dio.dart';
 import 'package:jin_reflex_new/api_service/prefs/app_preference.dart';
 
@@ -33,12 +35,12 @@ class PointData {
 
   factory PointData.fromJson(Map<String, dynamic> json) {
     return PointData(
-      id: json["id"],
-      x: json["x"].toDouble(),
-      y: json["y"].toDouble(),
-      tag: json["tag"],
-      index: json["index"],
-      group: json["group"],
+      id: json["id"].toString(),
+      x: (json["x"] as num).toDouble(),
+      y: (json["y"] as num).toDouble(),
+      tag: json["tag"].toString(),
+      index: int.parse(json["index"].toString()),
+      group: json["group"].toString(),
       state: 0,
     );
   }
@@ -49,9 +51,15 @@ class PointData {
 // --------------------------------------------------
 class LeftFootScreenNew extends StatefulWidget {
   final String diagnosisId;
-  final String pid;
+  final String patientId; // dynamic patient id
+  final String pid; // static clinic/doctor id (default "22")
 
-  const LeftFootScreenNew({required this.diagnosisId, required this.pid});
+  const LeftFootScreenNew({
+    required this.diagnosisId,
+    required this.patientId,
+    this.pid = "22",
+    Key? key,
+  }) : super(key: key);
 
   @override
   _LeftFootScreenNewState createState() => _LeftFootScreenNewState();
@@ -63,6 +71,8 @@ class _LeftFootScreenNewState extends State<LeftFootScreenNew> {
 
   List<PointData> points = [];
   bool isLoading = true;
+
+  final GlobalKey screenshotKey = GlobalKey();
 
   @override
   void initState() {
@@ -78,16 +88,20 @@ class _LeftFootScreenNewState extends State<LeftFootScreenNew> {
       final jsonString = await rootBundle.loadString("assets/button.json");
       final Map<String, dynamic> jsonMap = json.decode(jsonString);
 
-      final List<dynamic> jsonList = jsonMap["buttons"];
+      final List<dynamic> jsonList = jsonMap["buttons"] as List<dynamic>;
       points = jsonList.map((p) => PointData.fromJson(p)).toList();
 
+      // load saved local selections first (if any)
       loadSavedLocal();
 
+      // fetch server states and merge
       await fetchServerStates();
 
       setState(() => isLoading = false);
-    } catch (e) {
-      print("JSON ERROR: $e");
+    } catch (e, st) {
+      debugPrint("JSON ERROR: $e");
+      debugPrint("$st");
+      setState(() => isLoading = false);
     }
   }
 
@@ -95,20 +109,33 @@ class _LeftFootScreenNewState extends State<LeftFootScreenNew> {
   // LOAD FROM SINGLE JSON STRING (FAST)
   // ---------------------------------------------------
   void loadSavedLocal() {
-    final key = "LF_DATA_${widget.diagnosisId}_${widget.pid}";
+    final key = "LF_DATA_${widget.diagnosisId}_${widget.patientId}";
     final savedJson = AppPreference().getString(key);
+
+    debugPrint("LOAD LOCAL KEY -> $key");
+    debugPrint(
+      "SAVED JSON PREVIEW -> ${savedJson.isNotEmpty ? savedJson.substring(0, savedJson.length.clamp(0, 120)) : 'EMPTY'}",
+    );
 
     if (savedJson.isEmpty) return;
 
-    final decoded = jsonDecode(savedJson) as Map<String, dynamic>;
+    try {
+      final decoded = jsonDecode(savedJson) as Map<String, dynamic>;
 
-    decoded.forEach((idx, val) {
-      final parts = val.split(",");
-      final p = points.firstWhere((e) => e.index.toString() == idx);
-      p.x = double.parse(parts[0]);
-      p.y = double.parse(parts[1]);
-      p.state = int.parse(parts[2]);
-    });
+      decoded.forEach((idx, val) {
+        final parts = (val as String).split(",");
+        try {
+          final p = points.firstWhere((e) => e.index.toString() == idx);
+          p.x = double.parse(parts[0]);
+          p.y = double.parse(parts[1]);
+          p.state = int.parse(parts[2]);
+        } catch (e) {
+          debugPrint("Error applying saved point $idx -> $e");
+        }
+      });
+    } catch (e) {
+      debugPrint("Error decoding saved JSON for LF: $e");
+    }
   }
 
   // ---------------------------------------------------
@@ -123,8 +150,12 @@ class _LeftFootScreenNewState extends State<LeftFootScreenNew> {
 
     final jsonData = jsonEncode(data);
     await AppPreference().setString(
-      "LF_DATA_${widget.diagnosisId}_${widget.pid}",
+      "LF_DATA_${widget.diagnosisId}_${widget.patientId}",
       jsonData,
+    );
+
+    debugPrint(
+      "Saved LF_DATA length=${jsonData.length} key=LF_DATA_${widget.diagnosisId}_${widget.patientId}",
     );
   }
 
@@ -133,37 +164,49 @@ class _LeftFootScreenNewState extends State<LeftFootScreenNew> {
   // --------------------------------------------------
   Future<void> fetchServerStates() async {
     try {
+      final form = FormData.fromMap({
+        "diagnosisId": widget.diagnosisId,
+        "pid": widget.patientId, // API expects 'pid' param; pass patientId here
+        "which": "lf",
+      });
+
+      debugPrint("FETCH SERVER STATES -> ${form.fields}");
+
       final response = await Dio().post(
         "https://jinreflexology.in/api/get_data.php",
-        data: FormData.fromMap({
-          "diagnosisId": widget.diagnosisId,
-          "pid": widget.pid,
-          "which": "lf",
-        }),
+        data: form,
         options: Options(responseType: ResponseType.plain),
       );
 
-      String raw = response.data.toString();
-      int start = raw.indexOf("{");
-      int end = raw.lastIndexOf("}");
-      String jsonString = raw.substring(start, end + 1);
+      final raw = response.data.toString();
+
+      // defensive parse: find first { and last } to extract JSON blob
+      final start = raw.indexOf("{");
+      final end = raw.lastIndexOf("}");
+      if (start == -1 || end == -1 || end < start) {
+        debugPrint("Unexpected server response for get_data.php: $raw");
+        return;
+      }
+      final jsonString = raw.substring(start, end + 1);
 
       final jsonBody = jsonDecode(jsonString);
 
       if (jsonBody["success"] == 1) {
-        String dataStr = jsonBody["data"];
-        Map<int, int> serverMap = {};
+        final dataStr = jsonBody["data"] as String;
+        final Map<int, int> serverMap = {};
 
-        for (String item in dataStr.split(";")) {
+        for (final item in dataStr.split(";")) {
           if (item.contains(":")) {
-            var part = item.split(":");
-            serverMap[int.parse(part[0])] = int.parse(part[1]);
+            final part = item.split(":");
+            final idx = int.tryParse(part[0]);
+            final val = int.tryParse(part[1]);
+            if (idx != null && val != null) serverMap[idx] = val;
           }
         }
 
         for (var p in points) {
           if (serverMap.containsKey(p.index)) {
-            int v = serverMap[p.index]!;
+            final v = serverMap[p.index]!;
             if (v == 1)
               p.state = 2;
             else if (v == -1)
@@ -172,9 +215,12 @@ class _LeftFootScreenNewState extends State<LeftFootScreenNew> {
               p.state = 1;
           }
         }
+      } else {
+        debugPrint("Server returned success!=1 for get_data.php -> $jsonBody");
       }
-    } catch (e) {
-      print("SERVER ERROR: $e");
+    } catch (e, st) {
+      debugPrint("SERVER ERROR: $e");
+      debugPrint("$st");
     }
   }
 
@@ -182,11 +228,10 @@ class _LeftFootScreenNewState extends State<LeftFootScreenNew> {
   // SAVE TO SERVER (Background call)
   // --------------------------------------------------
   Future<void> saveAllToServer() async {
-    StringBuffer sb = StringBuffer();
+    final StringBuffer sb = StringBuffer();
 
     for (var p in points) {
       int sendVal;
-
       if (p.state == 2)
         sendVal = 1;
       else if (p.state == 0)
@@ -202,13 +247,51 @@ class _LeftFootScreenNewState extends State<LeftFootScreenNew> {
         "https://jinreflexology.in/api/save_data.php",
         data: FormData.fromMap({
           "diagnosisId": widget.diagnosisId,
-          "pid": widget.pid,
+          "pid": widget.patientId, // PASS patientId as pid param
           "which": "lf",
           "data": sb.toString(),
         }),
       );
-    } catch (e) {
-      print("SAVE ERROR: $e");
+      debugPrint("Saved LF to server -> length=${sb.toString().length}");
+    } catch (e, st) {
+      debugPrint("SAVE ERROR: $e");
+      debugPrint("$st");
+    }
+  }
+
+  // --------------------------------------------------
+  // CAPTURE SCREENSHOT
+  // --------------------------------------------------
+  Future<String?> captureScreenshot() async {
+    try {
+      final boundary =
+          screenshotKey.currentContext?.findRenderObject()
+              as RenderRepaintBoundary?;
+      if (boundary == null) {
+        debugPrint("captureScreenshot: boundary is null");
+        return null;
+      }
+
+      final ui.Image image = await boundary.toImage(pixelRatio: 3.0);
+      final ByteData? byteData = await image.toByteData(
+        format: ui.ImageByteFormat.png,
+      );
+      if (byteData == null) {
+        debugPrint("captureScreenshot: byteData is null");
+        return null;
+      }
+
+      final Uint8List pngBytes = byteData.buffer.asUint8List();
+      final String base64Str = base64Encode(pngBytes);
+
+      debugPrint(
+        "captureScreenshot: size=${pngBytes.lengthInBytes}, base64Len=${base64Str.length}",
+      );
+      return base64Str;
+    } catch (e, st) {
+      debugPrint("Screenshot error: $e");
+      debugPrint("$st");
+      return null;
     }
   }
 
@@ -217,7 +300,6 @@ class _LeftFootScreenNewState extends State<LeftFootScreenNew> {
   // --------------------------------------------------
   Widget _buildDot(PointData p, double scale) {
     Color color;
-
     if (p.state == 1)
       color = Colors.red;
     else if (p.state == 2)
@@ -250,9 +332,25 @@ class _LeftFootScreenNewState extends State<LeftFootScreenNew> {
     // Fast local save
     await saveAllPointsFast();
 
-    // Mark as completed
+    // Capture screenshot
+    final base64 = await captureScreenshot();
+    if (base64 != null) {
+      // SAVE with CORRECT KEY (diagnosisId + patientId)
+      await AppPreference().setString(
+        "LF_IMG_${widget.diagnosisId}_${widget.patientId}",
+        base64,
+      );
+
+      debugPrint(
+        "Saved LF image key=LF_IMG_${widget.diagnosisId}_${widget.patientId} length=${base64.length}",
+      );
+    } else {
+      debugPrint("LF screenshot returned null");
+    }
+
+    // Mark as completed (use correct key)
     await AppPreference().setBool(
-      "LF_SAVED_${widget.diagnosisId}_${widget.pid}",
+      "LF_SAVED_${widget.diagnosisId}_${widget.patientId}",
       true,
     );
 
@@ -278,13 +376,11 @@ class _LeftFootScreenNewState extends State<LeftFootScreenNew> {
         title: Text("Left Foot Editor"),
         backgroundColor: Colors.green,
       ),
-
       floatingActionButton: FloatingActionButton.extended(
         onPressed: _saveAndExit,
         label: Text("Save"),
         backgroundColor: Colors.green,
       ),
-
       body:
           isLoading
               ? Center(child: CircularProgressIndicator())
@@ -297,23 +393,25 @@ class _LeftFootScreenNewState extends State<LeftFootScreenNew> {
                       final double scaleY = c.maxHeight / baseHeight;
                       final double scale = (scaleX + scaleY) / 2;
 
-                      return Stack(
-                        children: [
-                          Positioned.fill(
-                            child: Image.asset(
-                              'assets/images/point_finder_lf.png',
-                              fit: BoxFit.fill,
+                      return RepaintBoundary(
+                        key: screenshotKey,
+                        child: Stack(
+                          children: [
+                            Positioned.fill(
+                              child: Image.asset(
+                                'assets/images/point_finder_lf.png',
+                                fit: BoxFit.fill,
+                              ),
                             ),
-                          ),
-
-                          ...points.map((p) {
-                            return Positioned(
-                              left: p.x * scaleX,
-                              top: p.y * scaleY,
-                              child: _buildDot(p, scale),
-                            );
-                          }).toList(),
-                        ],
+                            ...points.map((p) {
+                              return Positioned(
+                                left: p.x * scaleX,
+                                top: p.y * scaleY,
+                                child: _buildDot(p, scale),
+                              );
+                            }).toList(),
+                          ],
+                        ),
                       );
                     },
                   ),
